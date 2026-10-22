@@ -276,7 +276,7 @@ bot = CardBot()
 @app_commands.describe(
     name="Card name to search for (e.g. Shoyo Hinata)",
     rarity="Rarity to filter by",
-    set="Set to filter by (e.g. P01, P02, D01, D02)",
+    set="Set to filter by",
     verbose="Include card text in the embed (defaults to false)"
 )
 @app_commands.choices(rarity=[
