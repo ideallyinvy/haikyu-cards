@@ -125,7 +125,7 @@ def search_cards(
 
     # Filter: name must contain the query
     query_lower = query.lower()
-    items = [i for i in items if query_lower in i.get("name", "").lower()]
+    items = [i for i in items if query_lower in i.get("name", "").lower().replace("\u00b7", "")]
 
     # Filter: rarity must match exactly (case-insensitive)
     if rarity:
