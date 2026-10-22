@@ -94,13 +94,9 @@ DEFAULT_COLOUR = discord.Colour.greyple()
 
 
 def affiliation_colour(affiliation: str) -> discord.Colour:
-    print("Affiliation: " + affiliation)
     if not affiliation or affiliation == "-":
-        print("Returning default")
         return DEFAULT_COLOUR
     school = affiliation.replace("\u00b7", "·").split("·")[0].strip()
-    print("School:" + school)
-    print(AFFILIATION_COLOURS.get(school, DEFAULT_COLOUR))
     return AFFILIATION_COLOURS.get(school, DEFAULT_COLOUR)
 
 # ── API helpers ───────────────────────────────────────────────────────────────
@@ -192,7 +188,7 @@ def build_card_embed(card: dict, verbose) -> discord.Embed:
     """Build a rich embed for a single card entry."""
     name     = card.get("name", "Unknown")
     vobarity = card.get("vobarity", "")
-    colour   = affiliation_colour(card.get("affiliation", "")),
+    colour   = affiliation_colour(card.get("affiliation", ""))
 
     title = f"{name}  [{vobarity}]"
 
