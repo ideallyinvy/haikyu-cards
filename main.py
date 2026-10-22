@@ -71,24 +71,24 @@ def get_session() -> requests.Session:
     return _session
 
 AFFILIATION_COLOURS = {
-    "Karasuno":           discord.Colour.from_rgb(254, 121, 2),
-    "Nekoma":             discord.Colour.from_rgb(192, 0,   0),
-    "Nekoma Junior High": discord.Colour.from_rgb(160, 0,   0),
-    "Aoba Johsai":        discord.Colour.from_rgb(0,   112, 192),
-    "Fukurodani":         discord.Colour.from_rgb(0,   32,  96),
-    "Inarizaki":          discord.Colour.from_rgb(128, 0,   128),
-    "Shiratorizawa":      discord.Colour.from_rgb(89,  30,  145),
-    "Date Tech":          discord.Colour.from_rgb(0,   176, 80),
-    "Itachiyama":         discord.Colour.from_rgb(0,   70,  127),
-    "Nohebi":             discord.Colour.from_rgb(85,  107, 47),
+    "Karasuno":           discord.Colour.from_rgb(239, 109, 30),
+    "Nekoma":             discord.Colour.from_rgb(222, 2,   38),
+    "Nekoma Junior High": discord.Colour.from_rgb(222, 2,   38),
+    "Aoba Johsai":        discord.Colour.from_rgb(1,   161, 159),
+    "Fukurodani":         discord.Colour.from_rgb(168, 135, 87),
+    "Inarizaki":          discord.Colour.from_rgb(168, 15,  33),
+    "Shiratorizawa":      discord.Colour.from_rgb(109, 18,  128),
+    "Date Tech":          discord.Colour.from_rgb(0,   98,  38),
+    "Itachiyama":         discord.Colour.from_rgb(248, 237, 37),
+    "Nohebi":             discord.Colour.from_rgb(4,   159, 96),
     "Johzenji":           discord.Colour.from_rgb(255, 192, 0),
-    "Kakugawa":           discord.Colour.from_rgb(165, 42,  42),
-    "Kamomedai":          discord.Colour.from_rgb(150, 150, 150),
-    "Ohgi Minami":        discord.Colour.from_rgb(255, 102, 0),
-    "Sarukawa Tech":      discord.Colour.from_rgb(70,  130, 180),
-    "Tokonami":           discord.Colour.from_rgb(64,  64,  64),
-    "Tsubakihara":        discord.Colour.from_rgb(0,   128, 128),
-    "Wakutani Minami":    discord.Colour.from_rgb(200, 100, 50),
+    "Kakugawa":           discord.Colour.from_rgb(87,  182, 50),
+    "Kamomedai":          discord.Colour.from_rgb(127, 206, 237),
+    "Ohgi Minami":        discord.Colour.from_rgb(27,  33,  137),
+    "Sarukawa Tech":      discord.Colour.from_rgb(1,   58,  144),
+    "Tokonami":           discord.Colour.from_rgb(2,   166, 195),
+    "Tsubakihara":        discord.Colour.from_rgb(250, 228, 153),
+    "Wakutani Minami":    discord.Colour.from_rgb(234, 123, 155),
 }
 DEFAULT_COLOUR = discord.Colour.greyple()
 
@@ -209,12 +209,6 @@ def build_card_embed(card: dict, verbose) -> discord.Embed:
         embed.add_field(name="Affiliation", value=affiliation, inline=True)
         if category == "CHARACTER":
             embed.add_field(name="Position", value=pos_display, inline=True)
-
-        embed.add_field(
-            name="Included in",
-            value=f"{card.get('product_type', '')} {card.get('product_name', '')}".strip() or "-",
-            inline=False,
-        )
 
         skill = (card.get("skill", "") or "").strip()
         if skill and skill != "-":
