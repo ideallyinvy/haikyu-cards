@@ -286,7 +286,8 @@ bot = CardBot()
     app_commands.Choice(name="C",       value="C"),
     app_commands.Choice(name="CP",      value="CP"),
     app_commands.Choice(name="D",       value="D"),
-    app_commands.Choice(name="DP",      value="DP")
+    app_commands.Choice(name="DP",      value="DP"),
+    app_commands.Choice(name="P",       value="P")
 ])
 @app_commands.choices(set=[
     app_commands.Choice(name="The Dumpster Battle",         value="P01"),
