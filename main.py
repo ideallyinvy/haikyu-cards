@@ -104,7 +104,7 @@ def affiliation_colour(affiliation: str) -> discord.Colour:
 def search_cards(
     query: str,
     rarity: Optional[str] = None,
-    set: Optional[str] = None,
+    set_code: Optional[str] = None,
 ) -> List[dict]:
     """
     Fetch all cards matching the query from the API, then filter to only those
@@ -129,7 +129,7 @@ def search_cards(
     query_tokens = set(query.lower().split())
     items = [
         i for i in items
-        if query_tokens.issubset(i.get("name", "").lower().replace("\u00b7", " ").split())
+        if query_tokens.issubset(set(i.get("name", "").lower().replace("\u00b7", " ").split()))
     ]
 
     # Filter: rarity must match exactly (case-insensitive)
@@ -139,8 +139,8 @@ def search_cards(
 
     # Filter: product_type must contain the set code (case-insensitive)
     # e.g. "P01" matches "HV-P01-EN", "D01" matches "HV-D01-EN"
-    if set:
-        set_upper = set.upper()
+    if set_code:
+        set_upper = set_code.upper()
         items = [i for i in items if set_upper in i.get("product_type", "").upper()]
 
     return items
@@ -275,9 +275,10 @@ bot = CardBot()
 @app_commands.describe(
     name="Card name to search for (e.g. Shoyo Hinata)",
     rarity="Rarity to filter by",
-    set="Set to filter by",
+    set_code="Set to filter by",
     verbose="Include card text in the embed (defaults to false)"
 )
+@app_commands.rename(set_code="set")
 @app_commands.choices(rarity=[
     app_commands.Choice(name="SEC",     value="SEC"),
     app_commands.Choice(name="SR",      value="SR"),
@@ -294,7 +295,7 @@ bot = CardBot()
     app_commands.Choice(name="DP",      value="DP"),
     app_commands.Choice(name="P",       value="P")
 ])
-@app_commands.choices(set=[
+@app_commands.choices(set_code=[
     app_commands.Choice(name="The Dumpster Battle",         value="P01"),
     app_commands.Choice(name="Karasuno Starter Deck",       value="D01"),
     app_commands.Choice(name="Nekoma Starter Deck",         value="D02"),
@@ -305,21 +306,21 @@ async def card_slash(
     interaction: discord.Interaction,
     name: str,
     rarity: Optional[str] = None,
-    set: Optional[str] = None,
+    set_code: Optional[str] = None,
     verbose: Optional[bool] = False
 ):
     # Defer immediately — API calls can take a moment
     await interaction.response.defer()
 
     try:
-        raw_results = search_cards(name, rarity=rarity, set=set)
+        raw_results = search_cards(name, rarity=rarity, set_code=set_code)
     except requests.HTTPError as e:
         if e.response is not None and e.response.status_code >= 500:
             # Session may have gone stale — reset it and try once more
             global _session
             _session = None
             try:
-                raw_results = search_cards(name, rarity=rarity, set=set)
+                raw_results = search_cards(name, rarity=rarity, set_code=set_code)
             except Exception as e2:
                 await interaction.followup.send(f"Error fetching card data: {e2}")
                 return
@@ -335,8 +336,8 @@ async def card_slash(
         filters = []
         if rarity:
             filters.append(f"rarity **{rarity.upper()}**")
-        if set:
-            filters.append(f"set **{set.upper()}**")
+        if set_code:
+            filters.append(f"set **{set_code.upper()}**")
         filter_str = f" with {' and '.join(filters)}" if filters else ""
         await interaction.followup.send(f'No cards found for **"{name}"**{filter_str}.')
         return
