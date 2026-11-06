@@ -123,9 +123,14 @@ def search_cards(
         resp.raise_for_status()
         items.extend(resp.json().get("items", []))
 
-    # Filter: name must contain the query
-    query_lower = query.lower()
-    items = [i for i in items if query_lower in i.get("name", "").lower().replace("\u00b7 ", "")]
+    # Filter: name must contain every query token as a whole word, in any order
+    # (case-insensitive) — e.g. "Hinata Shoyo" matches "Shoyo Hinata".
+    # The middle dot (·) is treated as a token separator, not part of a token.
+    query_tokens = set(query.lower().split())
+    items = [
+        i for i in items
+        if query_tokens.issubset(i.get("name", "").lower().replace("\u00b7", " ").split())
+    ]
 
     # Filter: rarity must match exactly (case-insensitive)
     if rarity:
