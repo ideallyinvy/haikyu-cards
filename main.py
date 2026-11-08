@@ -20,6 +20,7 @@ Setup:
 import io
 import math
 import os
+import string
 import requests
 from typing import Optional, List
 
@@ -126,10 +127,16 @@ def search_cards(
     # Filter: name must contain every query token as a whole word, in any order
     # (case-insensitive) — e.g. "Hinata Shoyo" matches "Shoyo Hinata".
     # The middle dot (·) is treated as a token separator, not part of a token.
-    query_tokens = set(query.lower().split())
+    # Punctuation is stripped from token boundaries so trailing periods, question
+    # marks, etc. don't block matches (e.g. "challengers" matches "CHALLENGERS.").
+    _strip = string.punctuation + "\u2026"
+    query_tokens = {t.strip(_strip) for t in query.lower().split()}
+    query_tokens.discard("")
     items = [
         i for i in items
-        if query_tokens.issubset(set(i.get("name", "").lower().replace("\u00b7", " ").split()))
+        if query_tokens.issubset(
+            {t.strip(_strip) for t in i.get("name", "").lower().replace("\u00b7", " ").split()}
+        )
     ]
 
     # Filter: rarity must match exactly (case-insensitive)
