@@ -507,10 +507,10 @@ def generate_decklist_image(cards: dict) -> bytes:
 
     # Load a font for the count badge
     try:
-        font = ImageFont.truetype("C:/Windows/Fonts/arialbd.ttf", 28)
+        font = ImageFont.truetype("C:/Windows/Fonts/arialbd.ttf", 44)
     except Exception:
         try:
-            font = ImageFont.truetype("arial.ttf", 28)
+            font = ImageFont.truetype("arial.ttf", 44)
         except Exception:
             font = ImageFont.load_default()
 
@@ -541,7 +541,7 @@ def generate_decklist_image(cards: dict) -> bytes:
     tw, th = thumbnails[0][0].size
 
     PADDING  = 8
-    BADGE_R  = 24           # badge circle radius
+    BADGE_R  = 36           # badge circle radius
     CELL_W   = tw + PADDING
     CELL_H   = th + PADDING
     canvas_w = DECKLIST_COLS * CELL_W + PADDING
