@@ -505,14 +505,23 @@ def generate_decklist_image(cards: dict) -> bytes:
     n    = len(items)
     rows = math.ceil(n / DECKLIST_COLS)
 
-    # Load a font for the count badge
-    try:
-        font = ImageFont.truetype("C:/Windows/Fonts/arialbd.ttf", 72)
-    except Exception:
+    # Load a font for the count badge.
+    # Try the bundled font first (works on any OS), then OS-specific paths.
+    _FONT_CANDIDATES = [
+        os.path.join(os.path.dirname(__file__), "assets", "DejaVuSans-Bold.ttf"),
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",   # Debian/Ubuntu
+        "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",             # Fedora/RHEL
+        "C:/Windows/Fonts/arialbd.ttf",                            # Windows
+    ]
+    font = None
+    for _path in _FONT_CANDIDATES:
         try:
-            font = ImageFont.truetype("arial.ttf", 72)
+            font = ImageFont.truetype(_path, 72)
+            break
         except Exception:
-            font = ImageFont.load_default()
+            continue
+    if font is None:
+        font = ImageFont.load_default()
 
     # Resampling filter (Pillow >= 9 uses Image.Resampling)
     try:
