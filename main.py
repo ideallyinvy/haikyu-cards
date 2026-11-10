@@ -24,6 +24,8 @@ import math
 import os
 import string
 import requests
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional, List
 
 import discord
@@ -156,6 +158,53 @@ def search_cards(
 
     # Filter: card number must match (3-digit, zero-padded)
     # e.g. "2" → "002", matches card_no "HV-P01-002-EN"
+    if card_number:
+        padded = card_number.strip().zfill(3)
+        items = [i for i in items if i.get("card_no", "").split("-")[2] == padded]
+
+    return items
+
+
+def _search_with_session(
+    session: requests.Session,
+    query: str,
+    rarity: Optional[str] = None,
+    set_code: Optional[str] = None,
+    card_number: Optional[str] = None,
+) -> List[dict]:
+    """
+    Identical to search_cards but uses an explicitly provided session instead
+    of the shared global one. Used by parallel workers in resolve_decklist_entries
+    so threads never touch the global _session concurrently.
+    """
+    first = session.get(API_URL, params={"word": query, "p": 1}, headers=API_HEADERS, timeout=15)
+    first.raise_for_status()
+    data  = first.json()
+    items = data.get("items", [])
+    total = data.get("count", 0)
+
+    for page in range(2, math.ceil(total / 20) + 1):
+        resp = session.get(API_URL, params={"word": query, "p": page}, headers=API_HEADERS, timeout=15)
+        resp.raise_for_status()
+        items.extend(resp.json().get("items", []))
+
+    _strip = string.punctuation + "\u2026"
+    query_tokens = {t.strip(_strip) for t in query.lower().split()}
+    query_tokens.discard("")
+    if query_tokens:
+        items = [
+            i for i in items
+            if query_tokens.issubset(
+                {t.strip(_strip) for t in i.get("name", "").lower().replace("\u00b7", " ").split()}
+            )
+        ]
+
+    if rarity:
+        items = [i for i in items if i.get("vobarity", "").upper() == rarity.upper()]
+
+    if set_code:
+        items = [i for i in items if set_code.upper() in i.get("product_type", "").upper()]
+
     if card_number:
         padded = card_number.strip().zfill(3)
         items = [i for i in items if i.get("card_no", "").split("-")[2] == padded]
@@ -1084,42 +1133,75 @@ def resolve_decklist_entries(
     entries: list[tuple[int, str]]
 ) -> tuple[dict, list[str]]:
     """
-    For each (count, card_no) entry, look up the card via the API.
+    For each (count, card_no) entry, look up the card via the API in parallel.
+
+    Up to 5 requests run concurrently (semaphore-capped to avoid rate-limiting).
+    Each worker uses its own requests.Session so the global session is never
+    accessed from multiple threads simultaneously.
+
     Returns:
-        cards  – dict matching the /decklist session format
+        cards  – dict matching the /decklist session format, in input order
         errors – list of card_nos that could not be resolved
     """
-    cards  = {}
-    errors = []
+    MAX_WORKERS   = 5
+    _sem          = threading.Semaphore(MAX_WORKERS)
 
-    for count, card_no in entries:
-        parts = card_no.split("-")  # ['HV', 'P01', '005', 'EN']
+    def _lookup(count: int, card_no: str) -> tuple[int, str, Optional[dict]]:
+        """Look up a single card; returns (count, card_no, matched_card_or_None)."""
+        parts = card_no.split("-")
         if len(parts) < 3:
-            errors.append(card_no)
-            continue
+            return count, card_no, None
 
         set_code = parts[1]
         num_str  = parts[2]
 
-        try:
-            results = search_cards("", set_code=set_code, card_number=num_str)
-        except Exception:
-            global _session
-            _session = None
+        # Each thread gets its own session to avoid shared-state race conditions
+        sess = requests.Session()
+        sess.get(
+            CARD_LIST_PAGE,
+            headers={
+                "User-Agent": API_HEADERS["User-Agent"],
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+            },
+            timeout=15,
+        )
+
+        with _sem:
             try:
-                results = search_cards("", set_code=set_code, card_number=num_str)
+                results = _search_with_session(sess, "", set_code=set_code, card_number=num_str)
             except Exception:
-                errors.append(card_no)
-                continue
+                # Retry once with a fresh session warmup
+                try:
+                    sess = requests.Session()
+                    sess.get(CARD_LIST_PAGE, headers={"User-Agent": API_HEADERS["User-Agent"]}, timeout=15)
+                    results = _search_with_session(sess, "", set_code=set_code, card_number=num_str)
+                except Exception:
+                    return count, card_no, None
 
         deduped = deduplicate_cards(results)
         match   = next((c for c in deduped if c["card_no"].upper() == card_no.upper()), None)
         if match is None:
             match = next((c for c in results if c["card_no"].upper() == card_no.upper()), None)
-        if match is None:
-            errors.append(card_no)
-            continue
+        return count, card_no, match
 
+    # Submit all lookups and collect results, preserving input order
+    ordered_results: dict[str, tuple[int, Optional[dict]]] = {}
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+        future_to_key = {pool.submit(_lookup, count, card_no): card_no for count, card_no in entries}
+        for future in as_completed(future_to_key):
+            count, card_no, match = future.result()
+            ordered_results[card_no] = (count, match)
+
+    # Reconstruct in original entry order
+    cards  = {}
+    errors = []
+    for _, card_no in entries:
+        count, match = ordered_results.get(card_no, (0, None))
+        if match is None:
+            if card_no not in errors:
+                errors.append(card_no)
+            continue
         if card_no in cards:
             cards[card_no]["count"] += count
         else:
