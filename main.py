@@ -106,11 +106,12 @@ def search_cards(
     query: str,
     rarity: Optional[str] = None,
     set_code: Optional[str] = None,
+    card_number: Optional[str] = None,
 ) -> List[dict]:
     """
     Fetch all cards matching the query from the API, then filter to only those
     whose name contains the query (case-insensitive). Optionally further filter
-    by rarity (e.g. "SR") and/or set code (e.g. "P01").
+    by rarity (e.g. "SR"), set code (e.g. "P01"), and/or card number (e.g. "002").
     """
     session = get_session()
     first   = session.get(API_URL, params={"word": query, "p": 1}, headers=API_HEADERS, timeout=15)
@@ -149,6 +150,12 @@ def search_cards(
     if set_code:
         set_upper = set_code.upper()
         items = [i for i in items if set_upper in i.get("product_type", "").upper()]
+
+    # Filter: card number must match (3-digit, zero-padded)
+    # e.g. "2" → "002", matches card_no "HV-P01-002-EN"
+    if card_number:
+        padded = card_number.strip().zfill(3)
+        items = [i for i in items if i.get("card_no", "").split("-")[2] == padded]
 
     return items
 
@@ -283,6 +290,7 @@ bot = CardBot()
     name="Card name to search for (e.g. Shoyo Hinata)",
     rarity="Rarity to filter by",
     set_code="Set to filter by",
+    card_number="Card number (3 digits, e.g. 002)",
     verbose="Include card text in the embed (defaults to false)"
 )
 @app_commands.rename(set_code="set")
@@ -314,20 +322,21 @@ async def card_slash(
     name: str,
     rarity: Optional[str] = None,
     set_code: Optional[str] = None,
+    card_number: Optional[str] = None,
     verbose: Optional[bool] = False
 ):
     # Defer immediately — API calls can take a moment
     await interaction.response.defer()
 
     try:
-        raw_results = search_cards(name, rarity=rarity, set_code=set_code)
+        raw_results = search_cards(name, rarity=rarity, set_code=set_code, card_number=card_number)
     except requests.HTTPError as e:
         if e.response is not None and e.response.status_code >= 500:
             # Session may have gone stale — reset it and try once more
             global _session
             _session = None
             try:
-                raw_results = search_cards(name, rarity=rarity, set_code=set_code)
+                raw_results = search_cards(name, rarity=rarity, set_code=set_code, card_number=card_number)
             except Exception as e2:
                 await interaction.followup.send(f"Error fetching card data: {e2}")
                 return
@@ -345,6 +354,8 @@ async def card_slash(
             filters.append(f"rarity **{rarity.upper()}**")
         if set_code:
             filters.append(f"set **{set_code.upper()}**")
+        if card_number:
+            filters.append(f"card number **{card_number.strip().zfill(3)}**")
         filter_str = f" with {' and '.join(filters)}" if filters else ""
         await interaction.followup.send(f'No cards found for **"{name}"**{filter_str}.')
         return
