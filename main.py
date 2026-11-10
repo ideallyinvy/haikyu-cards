@@ -398,7 +398,7 @@ _decklists: dict[int, dict] = {}
 
 # Select-menu options (shared between the decklist view's filters)
 DECKLIST_RARITY_OPTIONS = [
-    discord.SelectOption(label="None", value=""),
+    discord.SelectOption(label="None", value="none"),
     discord.SelectOption(label="SEC", value="SEC"),
     discord.SelectOption(label="SR",  value="SR"),
     discord.SelectOption(label="SRP", value="SRP"),
@@ -415,7 +415,7 @@ DECKLIST_RARITY_OPTIONS = [
     discord.SelectOption(label="P",   value="P"),
 ]
 DECKLIST_SET_OPTIONS = [
-    discord.SelectOption(label="None",                  value=""),
+    discord.SelectOption(label="None",                  value="none"),
     discord.SelectOption(label="The Dumpster Battle",    value="P01"),
     discord.SelectOption(label="Karasuno Starter Deck",  value="D01"),
     discord.SelectOption(label="Nekoma Starter Deck",    value="D02"),
@@ -603,8 +603,8 @@ class DecklistView(discord.ui.View):
         self.user_id = user_id
         # Reflect currently-selected filters as the default option
         session  = _decklists.get(user_id, {})
-        rarity   = session.get("rarity") or ""
-        set_code = session.get("set_code") or ""
+        rarity   = session.get("rarity") or "none"
+        set_code = session.get("set_code") or "none"
         for opt in self.rarity_select.options:
             opt.default = (opt.value == rarity)
         for opt in self.set_select.options:
@@ -633,7 +633,7 @@ class DecklistView(discord.ui.View):
         row=0,
     )
     async def rarity_select(self, interaction: discord.Interaction, select: discord.ui.Select):
-        _decklists[self.user_id]["rarity"] = select.values[0] or None
+        _decklists[self.user_id]["rarity"] = None if select.values[0] == "none" else select.values[0]
         await interaction.response.defer()
 
     @discord.ui.select(
@@ -643,7 +643,7 @@ class DecklistView(discord.ui.View):
         row=1,
     )
     async def set_select(self, interaction: discord.Interaction, select: discord.ui.Select):
-        _decklists[self.user_id]["set_code"] = select.values[0] or None
+        _decklists[self.user_id]["set_code"] = None if select.values[0] == "none" else select.values[0]
         await interaction.response.defer()
 
     # ── Action buttons (row 2) ────────────────────────────────────────────────
