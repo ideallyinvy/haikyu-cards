@@ -384,7 +384,7 @@ async def card_slash(
 
 MAX_DECK_SIZE = 40
 DECKLIST_COLS = 10          # thumbnails per row in the generated image
-THUMB_WIDTH   = 200         # thumbnail width in pixels
+THUMB_WIDTH   = 350         # thumbnail width in pixels
 
 # In-memory decklist sessions: user_id -> session dict
 # session = {
@@ -507,10 +507,10 @@ def generate_decklist_image(cards: dict) -> bytes:
 
     # Load a font for the count badge
     try:
-        font = ImageFont.truetype("C:/Windows/Fonts/arialbd.ttf", 44)
+        font = ImageFont.truetype("C:/Windows/Fonts/arialbd.ttf", 72)
     except Exception:
         try:
-            font = ImageFont.truetype("arial.ttf", 44)
+            font = ImageFont.truetype("arial.ttf", 72)
         except Exception:
             font = ImageFont.load_default()
 
@@ -541,9 +541,15 @@ def generate_decklist_image(cards: dict) -> bytes:
     tw, th = thumbnails[0][0].size
 
     PADDING  = 8
-    BADGE_R  = 36           # badge circle radius
     CELL_W   = tw + PADDING
     CELL_H   = th + PADDING
+    canvas_w = DECKLIST_COLS * CELL_W + PADDING
+    canvas_h = rows * CELL_H + PADDING
+
+    # Derive badge radius from the actual rendered size of the widest digit
+    _probe = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    _bb    = _probe.textbbox((0, 0), "4", font=font, anchor="mm")
+    BADGE_R = int(math.ceil(math.sqrt(((_bb[2]-_bb[0])/2)**2 + ((_bb[3]-_bb[1])/2)**2))) + 10
     canvas_w = DECKLIST_COLS * CELL_W + PADDING
     canvas_h = rows * CELL_H + PADDING
 
@@ -1014,6 +1020,174 @@ async def decklist_slash(interaction: discord.Interaction):
     # Store the message so we can edit it later
     msg = await interaction.original_response()
     _decklists[user_id]["decklist_msg"] = msg
+
+
+# ── /generate_decklist_image command ─────────────────────────────────────────
+
+def parse_decklist_text(text: str) -> tuple[str, list[tuple[int, str]], list[str]]:
+    """
+    Parse a decklist text block into (title, entries, errors).
+
+    Each card line is expected to be:
+        <count> <card_id> <name>
+    e.g.:
+        2 HV-P01-005 Shoyo Hinata
+
+    <card_id> is normalised to a full card_no by appending "-EN" if absent.
+    Returns:
+        title   – the deck name from the header line, or ""
+        entries – list of (count, card_no) tuples in order
+        errors  – list of lines that could not be parsed
+    """
+    import re
+    LINE_RE = re.compile(
+        r"^\s*(\d+)\s+"          # count
+        r"(HV-[A-Z0-9]+-\d+)"   # card id  e.g. HV-P01-005
+        r"(?:-EN)?"              # optional -EN suffix already present
+        r"\s+",                  # trailing space before name (name is ignored)
+        re.IGNORECASE,
+    )
+
+    title   = ""
+    entries = []
+    errors  = []
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        m = LINE_RE.match(line)
+        if not m:
+            # Treat as a title/header if no entries have been parsed yet
+            if not entries:
+                title = line
+            else:
+                errors.append(line)
+            continue
+        count   = int(m.group(1))
+        card_no = m.group(2).upper() + "-EN"
+        entries.append((count, card_no))
+
+    return title, entries, errors
+
+
+def resolve_decklist_entries(
+    entries: list[tuple[int, str]]
+) -> tuple[dict, list[str]]:
+    """
+    For each (count, card_no) entry, look up the card via the API.
+    Returns:
+        cards  – dict matching the /decklist session format
+        errors – list of card_nos that could not be resolved
+    """
+    cards  = {}
+    errors = []
+
+    for count, card_no in entries:
+        parts = card_no.split("-")  # ['HV', 'P01', '005', 'EN']
+        if len(parts) < 3:
+            errors.append(card_no)
+            continue
+
+        set_code = parts[1]
+        num_str  = parts[2]
+
+        try:
+            results = search_cards("", set_code=set_code, card_number=num_str)
+        except Exception:
+            global _session
+            _session = None
+            try:
+                results = search_cards("", set_code=set_code, card_number=num_str)
+            except Exception:
+                errors.append(card_no)
+                continue
+
+        deduped = deduplicate_cards(results)
+        match   = next((c for c in deduped if c["card_no"].upper() == card_no.upper()), None)
+        if match is None:
+            match = next((c for c in results if c["card_no"].upper() == card_no.upper()), None)
+        if match is None:
+            errors.append(card_no)
+            continue
+
+        if card_no in cards:
+            cards[card_no]["count"] += count
+        else:
+            cards[card_no] = {"card": match, "count": count}
+
+    return cards, errors
+
+
+@bot.tree.command(
+    name="generate_decklist_image",
+    description="Generate a decklist image from a block of decklist text",
+)
+@app_commands.describe(decklist="Paste your full decklist text here")
+async def generate_decklist_image_slash(
+    interaction: discord.Interaction,
+    decklist: str,
+):
+    await interaction.response.defer()
+
+    if not interaction.channel:
+        await interaction.followup.send(
+            "Cannot post the decklist image — this channel type is not supported."
+        )
+        return
+
+    # Parse
+    title, entries, parse_errors = parse_decklist_text(decklist)
+
+    if not entries:
+        await interaction.followup.send(
+            "No valid card lines found. Each line should look like:\n"
+            "`2 HV-P01-005 Shoyo Hinata`"
+        )
+        return
+
+    total_copies = sum(c for c, _ in entries)
+    if total_copies > MAX_DECK_SIZE:
+        await interaction.followup.send(
+            f"Decklist has {total_copies} total cards — maximum is {MAX_DECK_SIZE}."
+        )
+        return
+
+    # Resolve cards via API (synchronous network calls → run in executor)
+    await interaction.followup.send(
+        f"⏳ Looking up {len(entries)} card(s)…", ephemeral=True
+    )
+
+    loop = asyncio.get_running_loop()
+    cards, resolve_errors = await loop.run_in_executor(
+        None, resolve_decklist_entries, entries
+    )
+
+    # Generate image (CPU-bound → run in executor)
+    img_bytes = await loop.run_in_executor(None, generate_decklist_image, cards)
+
+    # Build embed
+    deck_title = title or f"{interaction.user.display_name}'s Decklist"
+    embed = discord.Embed(
+        title=f"📋 {deck_title}",
+        colour=discord.Colour.blurple(),
+    )
+    embed.set_image(url="attachment://decklist.png")
+    card_lines = "\n".join(
+        f"**{c['card']['name']}** [{c['card']['vobarity']}] ×{c['count']}"
+        for c in cards.values()
+    )
+    embed.description = (card_lines or "Empty")[:4096]
+    total = sum(c["count"] for c in cards.values())
+    footer = f"{total} cards"
+    if resolve_errors:
+        footer += f"  •  Could not find: {', '.join(resolve_errors)}"
+    if parse_errors:
+        footer += f"  •  Skipped lines: {', '.join(parse_errors[:3])}"
+    embed.set_footer(text=footer[:2048])
+
+    file = discord.File(io.BytesIO(img_bytes), filename="decklist.png")
+    await interaction.channel.send(embed=embed, file=file)
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
