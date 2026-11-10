@@ -783,6 +783,20 @@ class AddCardModal(discord.ui.Modal):
             raw_results = search_cards(
                 name_val, rarity=rarity, set_code=set_code, card_number=card_num_val
             )
+        except (requests.ConnectionError, requests.Timeout, requests.HTTPError) as e:
+            # Connection dropped or server error — reset the session and retry once
+            if isinstance(e, requests.HTTPError) and (e.response is None or e.response.status_code < 500):
+                await interaction.followup.send(f"Error searching: {e}", ephemeral=True)
+                return
+            global _session
+            _session = None
+            try:
+                raw_results = search_cards(
+                    name_val, rarity=rarity, set_code=set_code, card_number=card_num_val
+                )
+            except Exception as e2:
+                await interaction.followup.send(f"Error searching: {e2}", ephemeral=True)
+                return
         except Exception as e:
             await interaction.followup.send(f"Error searching: {e}", ephemeral=True)
             return
